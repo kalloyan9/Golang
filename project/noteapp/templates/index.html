@@ -3,22 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <title>Go Notes - Login/Register</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        input {
+            margin: 5px;
+            padding: 10px;
+            width: 200px;
+        }
+        button {
+            padding: 10px;
+            margin: 5px;
+        }
+    </style>
 </head>
 <body>
     <h1>Welcome to Go Notes</h1>
-    <form action="/login" method="post">
-        <h2>Login</h2>
-        <input type="text" name="username" placeholder="Username" required>
-        <input type="password" name="password" placeholder="Password" required>
-        <button type="submit">Login</button>
+    <form id="authForm" action="/login" method="post">
+        <h2 id="formTitle">Login</h2>
+        <input type="text" id="username" name="username" placeholder="Username" required>
+        <input type="password" id="password" name="password" placeholder="Password" required>
+        <button type="submit" id="submitBtn">Login</button>
     </form>
+    <button id="toggleBtn" onclick="toggleForm()">Switch to Register</button>
 
-    <form action="/register" method="post">
-        <h2>Register</h2>
-        <input type="text" name="username" placeholder="Username" required>
-        <input type="password" name="password" placeholder="Password" required>
-        <button type="submit">Register</button>
-    </form>
+    <script>
+        function toggleForm() {
+            const formTitle = document.getElementById("formTitle");
+            const submitBtn = document.getElementById("submitBtn");
+            const toggleBtn = document.getElementById("toggleBtn");
+            if (formTitle.innerText === "Login") {
+                formTitle.innerText = "Register";
+                submitBtn.innerText = "Register";
+                document.getElementById("authForm").action = "/register";
+                toggleBtn.innerText = "Switch to Login";
+            } else {
+                formTitle.innerText = "Login";
+                submitBtn.innerText = "Login";
+                document.getElementById("authForm").action = "/login";
+                toggleBtn.innerText = "Switch to Register";
+            }
+        }
+    </script>
 </body>
 </html>
 
