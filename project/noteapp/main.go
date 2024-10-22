@@ -1,261 +1,234 @@
 package main
 
-// needed libs for API functionality
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io/ioutil"
-	"os"
+    "crypto/sha256"
+    "encoding/json"
+    "errors"
+    "fmt"
+    "html/template"
+    "net/http"
+    "os"
+    "path/filepath"
 )
 
-// constants for DB
-const userFilePath = "users.json"
+const userFilePath = "data/users.json"
 const dataFolderPath = "data/"
 
-// user defined types
 type User struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+    Username string `json:"username"`
+    Password string `json:"password"`
 }
 
 type Note struct {
-	Name    string `json:"name"`
-	Content string `json:"content"`
+    Name    string `json:"name"`
+    Content string `json:"content"`
 }
 
-// local variables
-var users []User
 var currentUser *User
-var notes []Note
 
-// Function loading users from JSON file
-func loadUsers() error {
-	data, err := ioutil.ReadFile(userFilePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	return json.Unmarshal(data, &users)
+// Helper function for reading files
+func readFile(filePath string, v interface{}) error {
+    data, err := os.ReadFile(filePath)
+    if err != nil {
+        if errors.Is(err, os.ErrNotExist) {
+            return nil
+        }
+        return fmt.Errorf("failed to read file %s: %w", filePath, err)
+    }
+    if err := json.Unmarshal(data, v); err != nil {
+        return fmt.Errorf("failed to unmarshal file %s: %w", filePath, err)
+    }
+    return nil
 }
 
-// Function saving users to JSON file
-func saveUsers() error {
-	data, err := json.Marshal(users)
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(userFilePath, data, 0644)
+// Helper function for writing files
+func writeFile(filePath string, v interface{}) error {
+    data, err := json.Marshal(v)
+    if err != nil {
+        return fmt.Errorf("failed to marshal data for file %s: %w", filePath, err)
+    }
+    if err := os.WriteFile(filePath, data, 0644); err != nil {
+        return fmt.Errorf("failed to write file %s: %w", filePath, err)
+    }
+    return nil
 }
 
-// Function loading notes for a user from JSON file
-func loadNotes(username string) error {
-	filePath := dataFolderPath + username + ".json"
-	data, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	return json.Unmarshal(data, &notes)
+// Load users from JSON
+func loadUsers() ([]User, error) {
+    var users []User
+    err := readFile(userFilePath, &users)
+    return users, err
 }
 
-// Function saving notes for a user to JSON file
-func saveNotes(username string) error {
-	filePath := dataFolderPath + username + ".json"
-	data, err := json.Marshal(notes)
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(filePath, data, 0644)
+// Save users to JSON
+func saveUsers(users []User) error {
+    return writeFile(userFilePath, users)
 }
 
-// Function registering a new user
-func register(username, password string) error {
-	for _, user := range users {
-		if user.Username == username {
-			return errors.New("username already exists")
-		}
-	}
-	newUser := User{Username: username, Password: password}
-	users = append(users, newUser)
-	return saveUsers()
+// Load notes for a user
+func loadNotes(username string) ([]Note, error) {
+    filePath := filepath.Join(dataFolderPath, username+".json")
+    var notes []Note
+    err := readFile(filePath, &notes)
+    return notes, err
 }
 
-// Function for logging a user
-func login(username, password string) error {
-	for _, user := range users {
-		if user.Username == username && user.Password == password {
-			currentUser = &user
-			return loadNotes(username)
-		}
-	}
-	return errors.New("invalid username or password")
+// Save notes for a user
+func saveNotes(username string, notes []Note) error {
+    filePath := filepath.Join(dataFolderPath, username+".json")
+    return writeFile(filePath, notes)
 }
 
-// Function for adding a new note
-func addNote() {
-	var name, content string
-	fmt.Println("Enter note name:")
-	fmt.Scanln(&name)
-
-	// Check if a note with the same name already exists
-	for _, note := range notes {
-		if note.Name == name {
-			fmt.Println("Error: A note with this name already exists.")
-			return
-		}
-	}
-
-	fmt.Println("Enter note content:")
-	fmt.Scanln(&content)
-
-	note := Note{Name: name, Content: content}
-	notes = append(notes, note)
-	saveNotes(currentUser.Username)
+// Hash password using SHA-256 for simplicity
+func hashPassword(password string) string {
+    hash := sha256.Sum256([]byte(password))
+    return fmt.Sprintf("%x", hash)
 }
 
-// Function for editing an existing note
-func editNote() {
-	var name string
-	fmt.Println("Enter note name to edit:")
-	fmt.Scanln(&name)
+// Register user
+func registerHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method == http.MethodPost {
+        r.ParseForm()
+        username := r.FormValue("username")
+        password := r.FormValue("password")
 
-	for i, note := range notes {
-		if note.Name == name {
-			var newContent string
-			fmt.Println("Enter new content:")
-			fmt.Scanln(&newContent)
-			notes[i].Content = newContent
-			saveNotes(currentUser.Username)
-			fmt.Println("Note updated.")
-			return
-		}
-	}
-	fmt.Println("Error: Note not found.")
+        users, err := loadUsers()
+        if err != nil {
+            http.Error(w, "Error loading users", http.StatusInternalServerError)
+            return
+        }
+
+        for _, user := range users {
+            if user.Username == username {
+                http.Error(w, "Username already exists", http.StatusBadRequest)
+                return
+            }
+        }
+
+        hashedPassword := hashPassword(password)
+        newUser := User{Username: username, Password: hashedPassword}
+        users = append(users, newUser)
+
+        if err := saveUsers(users); err != nil {
+            http.Error(w, "Error saving user", http.StatusInternalServerError)
+            return
+        }
+
+        http.Redirect(w, r, "/", http.StatusSeeOther)
+    } else {
+        tmpl, err := template.ParseFiles("templates/register.html")
+        if err != nil {
+            http.Error(w, "Error loading template", http.StatusInternalServerError)
+            return
+        }
+        tmpl.Execute(w, nil)
+    }
 }
 
-// Function deleting a note
-func deleteNote() {
-	var name string
-	fmt.Println("Enter note name to delete:")
-	fmt.Scanln(&name)
+// Login user
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method == http.MethodPost {
+        r.ParseForm()
+        username := r.FormValue("username")
+        password := hashPassword(r.FormValue("password"))
 
-	for i, note := range notes {
-		if note.Name == name {
-			notes = append(notes[:i], notes[i+1:]...)
-			saveNotes(currentUser.Username)
-			fmt.Println("Note deleted.")
-			return
-		}
-	}
-	fmt.Println("Error: Note not found.")
+        users, err := loadUsers()
+        if err != nil {
+            http.Error(w, "Error loading users", http.StatusInternalServerError)
+            return
+        }
+
+        for _, user := range users {
+            if user.Username == username && user.Password == password {
+                currentUser = &user
+                http.Redirect(w, r, "/notes", http.StatusSeeOther)
+                return
+            }
+        }
+
+        http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+    } else {
+        tmpl, err := template.ParseFiles("templates/login.html")
+        if err != nil {
+            http.Error(w, "Error loading template", http.StatusInternalServerError)
+            return
+        }
+        tmpl.Execute(w, nil)
+    }
 }
 
-// Function printing all notes
-func printNotes() {
-	if len(notes) == 0 {
-		fmt.Println("No notes found.")
-		return
-	}
-	for _, note := range notes {
-		fmt.Printf("Name: %s, Content: %s\n", note.Name, note.Content)
-	}
+// Notes page handler
+func notesHandler(w http.ResponseWriter, r *http.Request) {
+    if currentUser == nil {
+        http.Redirect(w, r, "/", http.StatusSeeOther)
+        return
+    }
+
+    notes, err := loadNotes(currentUser.Username)
+    if err != nil {
+        http.Error(w, "Error loading notes", http.StatusInternalServerError)
+        return
+    }
+
+    if r.Method == http.MethodPost {
+        r.ParseForm()
+        name := r.FormValue("name")
+        content := r.FormValue("content")
+
+        note := Note{Name: name, Content: content}
+        notes = append(notes, note)
+
+        if err := saveNotes(currentUser.Username, notes); err != nil {
+            http.Error(w, "Error saving notes", http.StatusInternalServerError)
+            return
+        }
+
+        http.Redirect(w, r, "/notes", http.StatusSeeOther)
+        return
+    }
+
+    tmpl, err := template.ParseFiles("templates/notes.html")
+    if err != nil {
+        http.Error(w, "Error loading template", http.StatusInternalServerError)
+        return
+    }
+    tmpl.Execute(w, notes)
 }
 
-// Main menu for logged-in users
-func loggedInMenu() {
-	for {
-		fmt.Println("\n1. Add Note")
-		fmt.Println("2. Edit Note")
-		fmt.Println("3. Delete Note")
-		fmt.Println("4. Show Notes")
-		fmt.Println("5. Logout")
-		fmt.Print("Choose an option: ")
-		var choice int
-		fmt.Scanln(&choice)
-
-		switch choice {
-		case 1:
-			addNote()
-		case 2:
-			editNote()
-		case 3:
-			deleteNote()
-		case 4:
-			printNotes()
-		case 5:
-			currentUser = nil
-			notes = nil
-			fmt.Println("Logged out.")
-			return
-		default:
-			fmt.Println("Invalid option.")
-		}
-	}
+// Serve static files (JavaScript, CSS, etc.)
+func staticFileHandler(w http.ResponseWriter, r *http.Request) {
+    http.ServeFile(w, r, "static/"+r.URL.Path[1:])
 }
 
-// Main menu for the program - register/login
-func startMenu() {
-	err := loadUsers()
-	if err != nil {
-		fmt.Println("Error loading users:", err)
-		return
-	}
-
-	for {
-		fmt.Println("\n1. Register")
-		fmt.Println("2. Login")
-		fmt.Println("3. Exit")
-		fmt.Print("Choose an option: ")
-		var choice int
-		fmt.Scanln(&choice)
-
-		switch choice {
-		case 1:
-			var username, password string
-			fmt.Println("Enter username:")
-			fmt.Scanln(&username)
-			fmt.Println("Enter password:")
-			fmt.Scanln(&password)
-			err := register(username, password)
-			if err != nil {
-				fmt.Println("Error:", err)
-			} else {
-				fmt.Println("Registration successful.")
-			}
-		case 2:
-			var username, password string
-			fmt.Println("Enter username:")
-			fmt.Scanln(&username)
-			fmt.Println("Enter password:")
-			fmt.Scanln(&password)
-			err := login(username, password)
-			if err != nil {
-				fmt.Println("Error:", err)
-			} else {
-				fmt.Println("Login successful.")
-				loggedInMenu()
-			}
-		case 3:
-			fmt.Println("Goodbye!")
-			return
-		default:
-			fmt.Println("Invalid option.")
-		}
-	}
-}
-
-// main Go func
+// Main handler with proper error handling
 func main() {
-	// Ensure the data directory exists
-	if _, err := os.Stat(dataFolderPath); os.IsNotExist(err) {
-		os.Mkdir(dataFolderPath, 0755)
-	}
+    // Ensure the data folder exists
+    if err := os.MkdirAll(dataFolderPath, 0755); err != nil {
+        fmt.Println("Error creating data folder:", err)
+        return
+    }
 
-	startMenu()
+    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+        tmpl, err := template.ParseFiles("templates/index.html")
+        if err != nil {
+            http.Error(w, "Error loading template", http.StatusInternalServerError)
+            fmt.Println("Template parsing error:", err)
+            return
+        }
+        if err := tmpl.Execute(w, nil); err != nil {
+            http.Error(w, "Error executing template", http.StatusInternalServerError)
+            fmt.Println("Template execution error:", err)
+        }
+    })
 
+    http.HandleFunc("/register", registerHandler)
+    http.HandleFunc("/login", loginHandler)
+    http.HandleFunc("/notes", notesHandler)
+    http.HandleFunc("/static/", staticFileHandler)
+
+    fmt.Println("Server started at http://localhost:8080")
+    if err := http.ListenAndServe(":8080", nil); err != nil {
+        fmt.Println("Server failed:", err)
+    }
 }
+

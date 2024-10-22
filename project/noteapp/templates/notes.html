@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Your Notes</title>
+</head>
+<body>
+    <h1>Your Notes</h1>
+    <ul>
+        {{range .}}
+        <li><strong>{{.Name}}:</strong> {{.Content}}</li>
+        {{end}}
+    </ul>
+
+    <form action="/notes" method="post">
+        <h2>Add New Note</h2>
+        <input type="text" name="name" placeholder="Note name" required>
+        <textarea name="content" placeholder="Note content" required></textarea>
+        <button type="submit">Add Note</button>
+    </form>
+</body>
+</html>
+
