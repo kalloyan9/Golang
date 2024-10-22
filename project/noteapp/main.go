@@ -311,11 +311,6 @@ func deleteNoteHandler(w http.ResponseWriter, r *http.Request) {
     http.Redirect(w, r, "/notes", http.StatusSeeOther)
 }
 
-// Static file handler
-func staticFileHandler(w http.ResponseWriter, r *http.Request) {
-    http.ServeFile(w, r, "static/"+r.URL.Path[1:])
-}
-
 // Main handler function with error handling
 func main() {
     // Ensure the data folder exists
@@ -342,7 +337,6 @@ func main() {
     http.HandleFunc("/edit", editNoteHandler)
     http.HandleFunc("/delete", deleteNoteHandler)
     http.HandleFunc("/logout", logoutHandler)
-    http.HandleFunc("/static/", staticFileHandler)
 
     fmt.Println("Server started at http://localhost:8080")
     if err := http.ListenAndServe(":8080", nil); err != nil {
